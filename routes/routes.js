@@ -143,8 +143,14 @@ router.get("/boleto/:typedCode", async (req, res) => {
     const bank = typedCode.substring(0, 3);
     const currency = typedCode.substring(3, 4);
     const generalCheckDigit = typedCode.substring(32, 33);
-    const expirationFactor = typedCode.substring(33, 37);
-    const value = typedCode.substring(37, typedCode.length);
+    const expirationFactor =
+      parseInt(typedCode.substring(33, 37)) >= 1000
+        ? typedCode.substring(33, 37)
+        : null;
+    const value = typedCode.substring(
+      expirationFactor ? 37 : 33,
+      typedCode.length
+    );
     const freeField =
       typedCode.substring(4, 9) +
       typedCode.substring(10, 20) +
@@ -154,12 +160,16 @@ router.get("/boleto/:typedCode", async (req, res) => {
       bank +
       currency +
       generalCheckDigit +
-      expirationFactor +
+      (expirationFactor ? expirationFactor : "") +
       value +
       freeField;
 
     const barCodeWithoutGeneralCheckDigit =
-      bank + currency + expirationFactor + value + freeField;
+      bank +
+      currency +
+      (expirationFactor ? expirationFactor : "") +
+      value +
+      freeField;
 
     if (
       !checkDigitMod11(
@@ -175,14 +185,31 @@ router.get("/boleto/:typedCode", async (req, res) => {
 
     const amount = (parseInt(value) * 0.01).toFixed(2);
 
-    const initialDate = new Date(1997, 9, 7);
-    const baseDate = new Date(initialDate.getTime());
+    const initialDate = new Date(Date.UTC(1997, 9, 7)); // itnitial base at zero time
+    let baseDate = new Date(initialDate.getTime()); // current base date at zero time
 
-    const expirationDate = new Date(
-      baseDate.setDate(baseDate.getDate() + parseInt(expirationFactor))
-    )
-      .toISOString()
-      .split("T")[0];
+    const now = new Date().toISOString().split("T")[0];
+    const today = new Date(
+      Date.UTC(now.split("-")[0], now.split("-")[1] - 1, now.split("-")[2])
+    ); // today at zero time
+
+    const dateDifference =
+      today.setDate(today.getDate()) - baseDate.setDate(baseDate.getDate()); // date difference in milliseconds
+
+    const numberOfDays = Math.ceil(dateDifference / (1000 * 60 * 60 * 24)); // date difference in days
+
+    if (numberOfDays % 10000 === 0) {
+      baseDate = new Date(today.setDate(today.getDate() - 1000)); // new base date if day 10000
+    }
+
+    // defines a new base date if the deadline is reached, which occurs on the day number 10000 after the previous base date
+    const expirationDate = expirationFactor
+      ? new Date(
+          baseDate.setDate(baseDate.getDate() + parseInt(expirationFactor))
+        )
+          .toISOString()
+          .split("T")[0]
+      : null;
 
     return res.status(200).json({ barCode, amount, expirationDate });
   }

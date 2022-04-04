@@ -117,9 +117,19 @@ describe("Testing Server Routes", () => {
     expect(res.body).toHaveProperty("error");
   });
 
-  it("Should use route /boleto/:typedCode with a valid typed code of type 'título bancário' and return status code 200 and properties barCode and amount.", async () => {
+  it("Should use route /boleto/:typedCode with a valid typed code of type 'título bancário' and return status code 200 and properties barCode, amount and expirationDate.", async () => {
     const res = await request(app).get(
       "/boleto/21290001192110001210904475617405975870000002000"
+    );
+
+    expect(res.statusCode).toEqual(200);
+    expect(res.body).toHaveProperty("barCode");
+    expect(res.body).toHaveProperty("amount");
+  });
+
+  it("Should use route /boleto/:typedCode with a valid typed code of type 'título bancário' with value greater than R$99.999.999,99 and return status code 200 and properties barCode, amount and expirationDate.", async () => {
+    const res = await request(app).get(
+      "/boleto/21290001192110001210904475617405600019999999999"
     );
 
     expect(res.statusCode).toEqual(200);
