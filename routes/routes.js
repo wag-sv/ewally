@@ -16,7 +16,7 @@ const checkDigitMod10 = (sequence, checkDigit) => {
     .reduce((acc, value) => (acc += parseInt(value)), 0);
 
   const sumMod10 = sum % 10;
-  const calculatedCheckDigit = 10 - sumMod10;
+  let calculatedCheckDigit = 10 - sumMod10;
 
   if (calculatedCheckDigit === 10) {
     calculatedCheckDigit = 0;
@@ -29,7 +29,7 @@ const checkDigitMod10 = (sequence, checkDigit) => {
   }
 };
 
-const checkDigitMod11 = (sequence, checkDigit) => {
+const checkDigitMod11 = (sequence, checkDigit, docType) => {
   const reverseSequence = sequence.split("").reverse();
 
   let multiplierFactor = 1;
@@ -49,18 +49,34 @@ const checkDigitMod11 = (sequence, checkDigit) => {
   );
 
   const sumMod11 = sum % 11;
-  const calculatedCheckDigit = 11 - sumMod11;
+  let calculatedCheckDigit = 11 - sumMod11;
 
-  if (calculatedCheckDigit === 0) {
-    calculatedCheckDigit = 1;
+  if (docType === "titulo") {
+    if (calculatedCheckDigit === 0) {
+      calculatedCheckDigit = 1;
+    }
+
+    if (calculatedCheckDigit === 10) {
+      calculatedCheckDigit = 1;
+    }
+
+    if (calculatedCheckDigit === 11) {
+      calculatedCheckDigit = 1;
+    }
   }
 
-  if (calculatedCheckDigit === 10) {
-    calculatedCheckDigit = 1;
-  }
+  if (docType === "convenio") {
+    if (calculatedCheckDigit === 1) {
+      calculatedCheckDigit = 1;
+    }
 
-  if (calculatedCheckDigit === 11) {
-    calculatedCheckDigit = 1;
+    if (calculatedCheckDigit === 10) {
+      calculatedCheckDigit = 0;
+    }
+
+    if (calculatedCheckDigit === 11) {
+      calculatedCheckDigit = 0;
+    }
   }
 
   if (calculatedCheckDigit === parseInt(checkDigit)) {
@@ -128,7 +144,7 @@ router.get("/boleto/:typedCode", async (req, res) => {
     const currency = typedCode.substring(3, 4);
     const generalCheckDigit = typedCode.substring(32, 33);
     const expirationFactor = typedCode.substring(33, 37);
-    const amount = typedCode.substring(37, typedCode.length);
+    const value = typedCode.substring(37, typedCode.length);
     const freeField =
       typedCode.substring(4, 9) +
       typedCode.substring(10, 20) +
@@ -139,49 +155,150 @@ router.get("/boleto/:typedCode", async (req, res) => {
       currency +
       generalCheckDigit +
       expirationFactor +
-      amount +
+      value +
       freeField;
 
     const barCodeWithoutGeneralCheckDigit =
-      bank + currency + expirationFactor + amount + freeField;
+      bank + currency + expirationFactor + value + freeField;
 
-    if (!checkDigitMod11(barCodeWithoutGeneralCheckDigit, generalCheckDigit)) {
+    if (
+      !checkDigitMod11(
+        barCodeWithoutGeneralCheckDigit,
+        generalCheckDigit,
+        "titulo"
+      )
+    ) {
       return res
         .status(400)
         .json({ error: "Dígito verificador geral inválido." });
     }
 
-    return res.status(200).json({ barCode });
+    const amount = (parseInt(value) * 0.01).toFixed(2);
+
+    const initialDate = new Date(1997, 9, 7);
+    const baseDate = new Date(initialDate.getTime());
+
+    const expirationDate = new Date(
+      baseDate.setDate(baseDate.getDate() + parseInt(expirationFactor))
+    )
+      .toISOString()
+      .split("T")[0];
+
+    return res.status(200).json({ barCode, amount, expirationDate });
   }
 
   if (typedCode.length === 48) {
-    // return res.status(200).json({ amount, expirationDate, barCode });
+    const field1 = typedCode.substring(0, 11);
+    const checkDigitField1 = typedCode.substring(11, 12);
+
+    const field2 = typedCode.substring(12, 23);
+    const checkDigitField2 = typedCode.substring(23, 24);
+
+    const field3 = typedCode.substring(24, 35);
+    const checkDigitField3 = typedCode.substring(35, 36);
+
+    const field4 = typedCode.substring(36, 47);
+    const checkDigitField4 = typedCode.substring(47, 48);
+
+    if (!checkDigitMod10(field1, checkDigitField1)) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador do campo 1 inválido." });
+    }
+
+    if (!checkDigitMod10(field2, checkDigitField2)) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador do campo 2 inválido." });
+    }
+
+    if (!checkDigitMod10(field3, checkDigitField3)) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador do campo 3 inválido." });
+    }
+
+    if (!checkDigitMod10(field4, checkDigitField4)) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador do campo 4 inválido." });
+    }
+
+    const barCode = field1 + field2 + field3 + field4;
+
+    const product = barCode.substring(0, 1);
+    const segment = barCode.substring(1, 2);
+    const valueIdentifier = barCode.substring(2, 3);
+    const generalCheckDigit = barCode.substring(3, 4);
+    const value = barCode.substring(4, 15);
+    const cnpj = segment === "6" ? true : false;
+    const companyIdentification = cnpj
+      ? barCode.substring(15, 23)
+      : barCode.substring(15, 19);
+    const freeField = cnpj
+      ? barCode.substring(23, barCode.length)
+      : barCode.substring(19, barCode.length);
+
+    const barCodeWithoutGeneralCheckDigit =
+      product +
+      segment +
+      valueIdentifier +
+      value +
+      companyIdentification +
+      freeField;
+
+    if (
+      valueIdentifier === "6" &&
+      !checkDigitMod10(barCodeWithoutGeneralCheckDigit, generalCheckDigit)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador geral inválido." });
+    }
+
+    if (
+      valueIdentifier === "7" &&
+      !checkDigitMod10(barCodeWithoutGeneralCheckDigit, generalCheckDigit)
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador geral inválido." });
+    }
+
+    if (
+      valueIdentifier === "8" &&
+      !checkDigitMod11(
+        barCodeWithoutGeneralCheckDigit,
+        generalCheckDigit,
+        "convenio"
+      )
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador geral inválido." });
+    }
+
+    if (
+      valueIdentifier === "9" &&
+      !checkDigitMod11(
+        barCodeWithoutGeneralCheckDigit,
+        generalCheckDigit,
+        (docType = 2)
+      )
+    ) {
+      return res
+        .status(400)
+        .json({ error: "Dígito verificador geral inválido." });
+    }
+
+    const amount = (parseInt(value) * 0.01).toFixed(2);
+
+    // const expirationDate = cnpj
+    //   ? barCode.substring(23, 31)
+    //   : barCode.substring(19, 27);
+
+    return res.status(200).json({ barCode, amount });
   }
 });
 
 module.exports = router;
-
-//Título
-//00190.50095 40144.816069 06809.350314 3 37370000000100
-//0019050095 40144816069 06809350314 3 37370000000100
-//001905009  4014481606  0680935031    37370000000100
-
-//Convênio
-//82620000000 6 62730534000 2 00202200107 3 25520100504 8
-//826200000006627305340002002022001073255201005048
-
-//formato data de vencimento AAAAMMDD nas 8 primeiras posições do campo livre
-
-//Regex
-
-// You could use /^\d+$/.
-
-// That means:
-
-// ^ string start
-// \d+ a digit, once or more times
-// $ string end
-// This way you force the match to only numbers from start to end of that string.
-
-//21299758700000020000001121100012100447561740
-//21299758700000020000001121100012100447561740
